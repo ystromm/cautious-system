@@ -1,10 +1,48 @@
 version: 0.2
 
+env:
+  variables:
+    CI: true
+    HUGO_VERSION: "0.80.0"
+    HUGO_SHA256: "b3a259bbe633e2f9182f8ecfc1b5cee6a7cfc4c970defe5f29c9959f2ef3259b"
+
 phases:
   install:
     runtime-versions:
       nodejs: 12
+    commands:
+      # This could probably all be replaced by a dedicated hugo image on ECR
+      # Or perhaps figure out a custom cache solution
+      - curl -Ls https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_${HUGO_VERSION}_Linux-64bit.tar.gz -o /tmp/hugo.tar.gz
+      - echo "${HUGO_SHA256}  /tmp/hugo.tar.gz" | sha256sum -c -
+      - tar xf /tmp/hugo.tar.gz -C /tmp
+      - mv /tmp/hugo /usr/bin/hugo
+      - rm -rf /tmp/hugo*
+      # Hugo/site npm dependencies
+      - cd ${CODEBUILD_SRC_DIR}
+      - npm install --also=dev
+      # Deploy dependencies
+      - cd ${CODEBUILD_SRC_DIR}/cicd
+      - npm install
+
   build:
     commands:
-      - echo "Hello world!"
+      # Build static site
+      - cd ${CODEBUILD_SRC_DIR}
+      - 'echo "Hello build-world"'
+      - hugo --environment production
+      # Deploy
+      - cd ${CODEBUILD_SRC_DIR}/cicd
+      - npm run cdk ls
+      - npm run cdk -- deploy --require-approval=never TechSiteStack
 
+artifacts:
+  files:
+    - '**/*'
+  base-directory: "$CODEBUILD_SRC_DIR/public/"
+  name: tech-site-$CODEBUILD_BUILD_NUMBER-$(date +%Y-%m-%d_%H:%M:%S)
+  secondary-artifacts:
+    latest:
+      files:
+        - '**/*'
+      base-directory: "$CODEBUILD_SRC_DIR/public/"
